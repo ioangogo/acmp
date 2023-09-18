@@ -3,50 +3,45 @@
 # mjdargen@gmail.com
 # https://dargenio.dev
 # https://github.com/mjdargen
-import os
+import os, sys
 import time
-import requests
+import random
 import datetime
 import argparse
 import multiprocessing
 from dotenv import load_dotenv
 from pydub import AudioSegment
 from pydub.playback import _play_with_simpleaudio
+from homeassistant_api import Client as homeClient
+import json
+import xdg_base_dirs
 
 
-# gets location (lat/lon) based on IP address
-def get_location():
-    url = 'http://ipinfo.io/json'
-    r = requests.get(url)
-    data = r.json()
-    return data['loc'].split(',')
+rain_state=["hail", "lightning", "lightning-rainy", "pouring", "rainy"]
+snow_states=["snowy", "snowy-rainy"]
 
 
-# gets weather based on lat/lon
-# go to https://openweathermap.org/api to register for free API key
-# add to .env file like this: WEATHER_KEY=<your_api_key_here>
-def get_weather(lat, lon):
-    key = os.getenv('WEATHER_KEY')
-    url = f'http://api.openweathermap.org/data/2.5/weather?lat={lat}&lon={lon}&appid={key}'
-    r = requests.get(url)
-    data = r.json()
+def get_weather(hassc):
+    api_url=hassc.get("auth").get("api_url")
+    token=hassc.get("auth").get("token")
+    hass_client=homeClient(api_url, token)
 
-    if 'rain' in data['weather'][0]['main'].lower():
+    weather=hass_client.get_entity(entity_id=hassc.get("entity", "weather.home")).get_state().state
+
+    if weather.lower() in rain_state:
         return 'raining'
-    elif 'snow' in data['weather'][0]['main'].lower():
+    elif weather.lower() in snow_states:
         return 'snowing'
     else:
         return 'sunny'
 
 
 # process for handling timeing to switch over
-def timing(conn, ):
+def timing(conn, hassc):
     prev = None
     while True:
-        # get location
-        lat, lon = get_location()
-        # get weather
-        weather = get_weather(lat, lon)
+
+        weather = get_weather(hassc)
         # get current time
         now = datetime.datetime.now().strftime("%I%p").lower()
         if now[0] == '0':
@@ -85,36 +80,56 @@ def audio(conn, game):
             playback = _play_with_simpleaudio(clip)
         # song finished, repeat
         if not playback.is_playing():
+            # Waiting a random amount of time(30s to 2 minutes)
+            time.sleep(random.randrange(30, 2*60))
             # stop old song and play new one
             playback.stop()
             clip = AudioSegment.from_mp3(file)
             playback = _play_with_simpleaudio(clip)
         time.sleep(2)
 
+default_config={
+    "game":"new-horizons",
+    "home_assistant":{
+        "auth":{
+            "api_url":"",
+            "token":""
+        },
+        "entity":"",
+    }
+}
 
 def main():
     load_dotenv()
+    config_path=os.path.join(xdg_base_dirs.xdg_config_dirs()[0], "acamp.json")
+    if not os.path.exists(config_path):
+        with open(config_path, "w") as f:
+            json.dump(default_config, f)
+            print(f"config written to {config_path} please edit before continuing")
+            sys.exit(1)
+    
+    config={}
+    with open(config_path, "r") as f:
+        config=json.load(f)
+
+        
+
 
     # handle arguments
     games = ['new-horizons', 'new-leaf', 'wild-world', 'animal-crossing']
-    parser = argparse.ArgumentParser(
-        description="Animal Crossing Music Player")
-    parser.add_argument('--game', dest='game', required=False,
-                        help=f'The valid game options are: {", ".join(games)}.')
-    args = parser.parse_args()
-    if not args.game:
+    if not config.get("game"):
         game = 'new-horizons'
-    elif args.game not in games:
+    if config.get("game") not in games:
         print('Game not recognized... Choosing New Horizons.')
         game = 'new-horizons'
     else:
-        game = args.game
+        game = config.get("game")
 
     # creating a pipe to communicate between processes
     parent_conn, child_conn = multiprocessing.Pipe()
 
     # creating processes
-    timing_process = multiprocessing.Process(target=timing, args=(child_conn,))
+    timing_process = multiprocessing.Process(target=timing, args=(child_conn,config.get("home_assistant")))
     audio_process = multiprocessing.Process(
         target=audio, args=(parent_conn, game))
 

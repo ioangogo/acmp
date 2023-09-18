@@ -1,5 +1,5 @@
-# acmp - Animal Crossing Music Player
-An Animal Crossing hourly music player that you can run in the background on your computer. Takes into account the time of day and weather for music selection!
+# acmp - Animal Crossing Music Player - With Home assistant
+An Animal Crossing hourly music player that you can run in the background on your computer. Takes into account the time of day and weather for music selection! This is a slight modification to replace the open weather map source with a configurable home assistant source to save API calls
 
 *Michael D'Argenio  
 mjdargenio@gmail.com  

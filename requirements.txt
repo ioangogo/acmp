@@ -1,3 +1,5 @@
 pydub
 simpleaudio
 python-dotenv
+homeassistant-api
+xdg-base-dirs
